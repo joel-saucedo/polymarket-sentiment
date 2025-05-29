@@ -59,7 +59,7 @@ This project follows chunk-wise development (max 300 LOC per PR):
 | Chunk | Status | Description |
 |-------|--------|-------------|
 | C0 | [x] | Repo scaffold + configs + CI skeleton |
-| C1 | [ ] | HTTP patches + retries |
+| C1 | [x] | HTTP patches + retries |
 | C2 | [ ] | Storage (DuckDB/Parquet) |
 | C3 | [ ] | Async batch scraper |
 | C4 | [ ] | Sentiment analysis |
