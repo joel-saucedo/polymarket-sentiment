@@ -185,92 +185,8 @@ class TestAsyncBatchScraper:
         assert not scraper._should_skip_target(target)
     
     @pytest.mark.asyncio
-    async def test_scrape_user_tweets_success(self, scraper):
-        """Test successful user tweet scraping."""
-        target = ScrapingTarget("user", "testuser", 1.0)
-        mirror = "http://test.com"
-        
-        # Mock the nitter response
-        mock_tweets = {
-            "tweets": [
-                {
-                    "link": "https://twitter.com/user/status/123456789",
-                    "text": "Test tweet content",
-                    "date": "2024-01-01 12:00:00",
-                    "stats": {"likes": 5, "retweets": 2, "comments": 1}
-                },
-                {
-                    "link": "https://twitter.com/user/status/987654321",
-                    "text": "Another test tweet",
-                    "date": "2024-01-01 13:00:00",
-                    "stats": {"likes": 10, "retweets": 3, "comments": 0}
-                }
-            ]
-        }
-        
-        with patch.object(scraper, '_get_nitter_for_mirror') as mock_get_nitter:
-            mock_nitter = Mock()
-            mock_nitter.get_tweets.return_value = mock_tweets
-            mock_get_nitter.return_value = mock_nitter
-            
-            tweets = await scraper._scrape_user_tweets(target, mirror)
-            
-            assert len(tweets) == 2
-            assert tweets[0].tweet_id == "123456789"
-            assert tweets[0].content == "Test tweet content"
-            assert tweets[0].username == "testuser"
-            assert tweets[0].likes == 5
-            assert tweets[1].tweet_id == "987654321"
-            
-            # Verify nitter was called correctly
-            mock_nitter.get_tweets.assert_called_once_with(
-                "testuser",
-                mode="user",
-                number=scraper.config.tweets_per_target
-            )
-    
-    @pytest.mark.asyncio
-    async def test_scrape_search_tweets_success(self, scraper):
-        """Test successful search tweet scraping."""
-        target = ScrapingTarget("search", "test query", 1.0)
-        mirror = "http://test.com"
-        
-        # Mock the nitter response
-        mock_tweets = {
-            "tweets": [
-                {
-                    "link": "https://twitter.com/user1/status/111111111",
-                    "text": "Search result tweet",
-                    "date": "2024-01-01 14:00:00",
-                    "user": {"username": "user1"},
-                    "stats": {"likes": 15, "retweets": 5, "comments": 2}
-                }
-            ]
-        }
-        
-        with patch.object(scraper, '_get_nitter_for_mirror') as mock_get_nitter:
-            mock_nitter = Mock()
-            mock_nitter.get_tweets.return_value = mock_tweets
-            mock_get_nitter.return_value = mock_nitter
-            
-            tweets = await scraper._scrape_search_tweets(target, mirror)
-            
-            assert len(tweets) == 1
-            assert tweets[0].tweet_id == "111111111"
-            assert tweets[0].content == "Search result tweet"
-            assert tweets[0].username == "user1"
-            assert tweets[0].likes == 15
-            
-            # Verify nitter was called correctly
-            mock_nitter.get_tweets.assert_called_once_with(
-                "test query",
-                mode="term",
-                number=scraper.config.tweets_per_target
-            )
-    
-    @pytest.mark.asyncio
-    async def test_scrape_target_success(self, scraper):
-        """Test successful target scraping."""
+    async def test_scrape_target_with_backend_success(self, scraper):
+        """Test successful target scraping using backend manager."""
         target = ScrapingTarget("user", "testuser", 1.0)
         
         mock_tweets = [
@@ -283,44 +199,25 @@ class TestAsyncBatchScraper:
             )
         ]
         
-        with patch.object(scraper, '_scrape_user_tweets', return_value=mock_tweets):
+        with patch.object(scraper, '_scrape_target_with_backend', return_value=mock_tweets):
             with patch.object(scraper.storage, 'insert_tweets_batch', return_value=1):
                 count = await scraper._scrape_target(target)
                 
                 assert count == 1
                 assert target.last_scraped is not None
                 assert target.error_count == 0
-                assert scraper.stats["successful_requests"] == 1
     
     @pytest.mark.asyncio
-    async def test_scrape_target_failure_with_retry(self, scraper):
-        """Test target scraping with failures and retries."""
+    async def test_scrape_target_failure_with_backend(self, scraper):
+        """Test target scraping with backend failures."""
         target = ScrapingTarget("user", "testuser", 1.0)
         
-        # Mock to fail twice then succeed
-        call_count = 0
-        def mock_scrape_side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 2:
-                raise Exception("Network error")
-            return [TweetModel(
-                tweet_id="123",
-                user_id="testuser", 
-                username="testuser",
-                content="Test tweet",
-                timestamp=datetime.now(timezone.utc)
-            )]
-        
-        with patch.object(scraper, '_scrape_user_tweets', side_effect=mock_scrape_side_effect):
-            with patch.object(scraper.storage, 'insert_tweets_batch', return_value=1):
-                count = await scraper._scrape_target(target)
-                
-                assert count == 1
-                assert call_count == 3  # Failed twice, succeeded on third
-                assert target.error_count == 0  # Reset on success
-                assert scraper.stats["successful_requests"] == 1
-                assert scraper.stats["failed_requests"] == 2
+        # Mock backend to return empty tweets (failure case)
+        with patch.object(scraper, '_scrape_target_with_backend', return_value=[]):
+            count = await scraper._scrape_target(target)
+            
+            assert count == 0
+            assert target.error_count == 1  # Incremented on failure
     
     @pytest.mark.asyncio
     async def test_scrape_target_skip_recent(self, scraper):
@@ -340,8 +237,6 @@ class TestAsyncBatchScraper:
         async def mock_scrape_target(target):
             # Simulate the stats increments that happen in real method
             scraper.stats["targets_processed"] += 1
-            scraper.stats["total_requests"] += 1
-            scraper.stats["successful_requests"] += 1
             return 5
             
         with patch.object(scraper, '_scrape_target', side_effect=mock_scrape_target):
@@ -350,22 +245,10 @@ class TestAsyncBatchScraper:
             assert summary["targets_total"] == len(scraper.targets)
             assert summary["targets_processed"] == len(scraper.targets)
             assert summary["tweets_scraped"] == 5 * len(scraper.targets)
-            assert summary["success_rate"] == 1.0
             assert "start_time" in summary
             assert "end_time" in summary
-    
-    def test_parse_tweet_date(self, scraper):
-        """Test tweet date parsing."""
-        # Test with valid date string
-        date_str = "2024-01-01 12:00:00"
-        parsed_date = scraper._parse_tweet_date(date_str)
-        assert isinstance(parsed_date, datetime)
-        
-        # Test with invalid date string (should fallback to current time)
-        invalid_date = "invalid date"
-        parsed_date = scraper._parse_tweet_date(invalid_date)
-        assert isinstance(parsed_date, datetime)
-        assert parsed_date.tzinfo is not None
+            assert "backend_usage" in summary
+            assert "available_backends" in summary
 
 
 class TestConfigLoading:

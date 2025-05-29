@@ -6,6 +6,7 @@ This module provides:
 - Rate limiting and error handling
 - Integration with storage layer
 - Configurable concurrency and retry logic
+- Support for multiple backends (snscrape primary, Nitter fallback)
 """
 
 import asyncio
@@ -19,6 +20,7 @@ from pathlib import Path
 
 from polymkt_sent.core.request import EnhancedRequestSession
 from polymkt_sent.core.storage import TweetModel, TweetStorage, StorageConfig
+from polymkt_sent.core.backends import BackendManager, ScrapingResult
 from polymkt_sent.nitter import Nitter
 
 
@@ -70,10 +72,14 @@ class ScrapingConfig:
     # Data freshness
     max_age_hours: int = 6  # Skip if scraped within this window
     tweets_per_target: int = 100  # Max tweets per target per run
+    
+    # Backend preferences
+    preferred_backend: str = "snscrape"  # "snscrape" or "nitter" or "auto"
+    enable_backend_fallback: bool = True  # Use fallback if primary fails
 
 
 class AsyncBatchScraper:
-    """Async batch scraper for multiple targets."""
+    """Async batch scraper for multiple targets with multiple backend support."""
     
     def __init__(
         self,
@@ -86,7 +92,10 @@ class AsyncBatchScraper:
         self.config = config
         self.targets = targets
         
-        # Rate limiting state
+        # Initialize backend manager
+        self.backend_manager = BackendManager(config.mirrors)
+        
+        # Rate limiting state (for Nitter fallback)
         self._mirror_usage: Dict[str, List[datetime]] = {}
         self._semaphore = asyncio.Semaphore(config.max_concurrent_requests)
         
@@ -97,10 +106,13 @@ class AsyncBatchScraper:
             "failed_requests": 0,
             "tweets_scraped": 0,
             "targets_processed": 0,
-            "last_run": None
+            "last_run": None,
+            "backend_usage": {}  # Track which backends were used
         }
         
-        # Nitter instances (one per mirror)
+        logger.info(f"AsyncBatchScraper initialized with backends: {self.backend_manager.get_available_backends()}")
+        
+        # Nitter instances (one per mirror) - kept for backward compatibility
         self._nitter_instances = {}
         
     def _get_nitter_for_mirror(self, mirror: str) -> Nitter:
@@ -150,115 +162,58 @@ class AsyncBatchScraper:
         age = datetime.now(timezone.utc) - target.last_scraped
         return age.total_seconds() < (self.config.max_age_hours * 3600)
     
-    async def _scrape_user_tweets(
+    async def _scrape_target_with_backend(
         self,
-        target: ScrapingTarget,
-        mirror: str
+        target: ScrapingTarget
     ) -> List[TweetModel]:
-        """Scrape tweets from a user account."""
-        nitter = self._get_nitter_for_mirror(mirror)
-        tweets = []
+        """Scrape a target using the backend manager."""
+        self.stats["total_requests"] += 1
         
         try:
-            # Wait for rate limit
-            await self._wait_for_rate_limit(mirror)
+            # Use backend manager to scrape
+            if target.is_user:
+                result = await self.backend_manager.scrape_user_tweets(
+                    target.value,
+                    self.config.tweets_per_target
+                )
+            elif target.is_search:
+                result = await self.backend_manager.scrape_search_tweets(
+                    target.value,
+                    self.config.tweets_per_target
+                )
+            else:
+                raise ValueError(f"Unknown target type: {target.target_type}")
             
-            # Scrape user timeline
-            raw_tweets = await asyncio.to_thread(
-                nitter.get_tweets,
-                target.value,
-                mode="user",
-                number=self.config.tweets_per_target
-            )
-            
-            # Convert to TweetModel objects
-            for raw_tweet in raw_tweets.get("tweets", []):
-                try:
-                    tweet = TweetModel(
-                        tweet_id=raw_tweet.get("link", "").split("/")[-1],
-                        user_id=target.value,  # Use username as user_id for now
-                        username=target.value,
-                        content=raw_tweet.get("text", ""),
-                        timestamp=self._parse_tweet_date(raw_tweet.get("date", "")),
-                        likes=raw_tweet.get("stats", {}).get("likes", 0),
-                        retweets=raw_tweet.get("stats", {}).get("retweets", 0),
-                        replies=raw_tweet.get("stats", {}).get("comments", 0),
-                        source_instance=mirror
-                    )
-                    tweets.append(tweet)
-                except Exception as e:
-                    logger.warning(f"Failed to parse tweet: {e}")
-                    continue
-            
-            logger.info(f"Scraped {len(tweets)} tweets from user {target.value}")
-            
+            if result.success:
+                self.stats["successful_requests"] += 1
+                self.stats["tweets_scraped"] += len(result.tweets)
+                
+                # Track backend usage
+                backend_used = result.backend_used or "unknown"
+                self.stats["backend_usage"][backend_used] = \
+                    self.stats["backend_usage"].get(backend_used, 0) + 1
+                
+                logger.info(
+                    f"Successfully scraped {len(result.tweets)} tweets from "
+                    f"{target.target_type} '{target.value}' using {backend_used}"
+                )
+                
+                return result.tweets
+            else:
+                self.stats["failed_requests"] += 1
+                logger.error(
+                    f"Failed to scrape {target.target_type} '{target.value}': "
+                    f"{result.error_message}"
+                )
+                return []
+                
         except Exception as e:
-            logger.error(f"Failed to scrape user {target.value} from {mirror}: {e}")
-            raise
-        
-        return tweets
-    
-    async def _scrape_search_tweets(
-        self,
-        target: ScrapingTarget,
-        mirror: str
-    ) -> List[TweetModel]:
-        """Scrape tweets from a search query."""
-        nitter = self._get_nitter_for_mirror(mirror)
-        tweets = []
-        
-        try:
-            # Wait for rate limit
-            await self._wait_for_rate_limit(mirror)
-            
-            # Scrape search results
-            raw_tweets = await asyncio.to_thread(
-                nitter.get_tweets,
-                target.value,
-                mode="term",
-                number=self.config.tweets_per_target
-            )
-            
-            # Convert to TweetModel objects
-            for raw_tweet in raw_tweets.get("tweets", []):
-                try:
-                    tweet = TweetModel(
-                        tweet_id=raw_tweet.get("link", "").split("/")[-1],
-                        user_id=raw_tweet.get("user", {}).get("username", "unknown"),
-                        username=raw_tweet.get("user", {}).get("username", "unknown"),
-                        content=raw_tweet.get("text", ""),
-                        timestamp=self._parse_tweet_date(raw_tweet.get("date", "")),
-                        likes=raw_tweet.get("stats", {}).get("likes", 0),
-                        retweets=raw_tweet.get("stats", {}).get("retweets", 0),
-                        replies=raw_tweet.get("stats", {}).get("comments", 0),
-                        source_instance=mirror
-                    )
-                    tweets.append(tweet)
-                except Exception as e:
-                    logger.warning(f"Failed to parse search tweet: {e}")
-                    continue
-            
-            logger.info(f"Scraped {len(tweets)} tweets for search '{target.value}'")
-            
-        except Exception as e:
-            logger.error(f"Failed to scrape search '{target.value}' from {mirror}: {e}")
-            raise
-        
-        return tweets
-    
-    def _parse_tweet_date(self, date_str: str) -> datetime:
-        """Parse tweet date string to datetime."""
-        try:
-            # Handle various date formats from Nitter
-            # This is a simplified version - real implementation would be more robust
-            from dateutil import parser
-            return parser.parse(date_str)
-        except Exception:
-            # Fallback to current time
-            return datetime.now(timezone.utc)
+            self.stats["failed_requests"] += 1
+            logger.error(f"Exception while scraping {target.target_type} '{target.value}': {e}")
+            return []
     
     async def _scrape_target(self, target: ScrapingTarget) -> int:
-        """Scrape a single target with retry logic."""
+        """Scrape a single target using the backend manager."""
         async with self._semaphore:
             tweets_count = 0
             
@@ -270,54 +225,23 @@ class AsyncBatchScraper:
                 logger.debug(f"Skipping {target.value} (recently scraped)")
                 return 0
             
-            # Try each mirror with exponential backoff
-            for attempt in range(self.config.max_retry):
-                mirror = random.choice(self.config.mirrors)
-                
-                try:
-                    # Scrape based on target type
-                    if target.is_user:
-                        tweets = await self._scrape_user_tweets(target, mirror)
-                    else:
-                        tweets = await self._scrape_search_tweets(target, mirror)
-                    
-                    # Store tweets in batch
-                    if tweets:
-                        stored_count = self.storage.insert_tweets_batch(tweets)
-                        tweets_count = stored_count
-                        
-                        logger.info(
-                            f"Stored {stored_count} tweets for {target.value}"
-                        )
-                    
-                    # Update target state
-                    target.last_scraped = datetime.now(timezone.utc)
-                    target.error_count = 0
-                    
-                    # Success - break retry loop
-                    self.stats["successful_requests"] += 1
-                    break
-                    
-                except Exception as e:
-                    target.error_count += 1
-                    self.stats["failed_requests"] += 1
-                    
-                    # Wait with exponential backoff before retry
-                    if attempt < self.config.max_retry - 1:
-                        delay = self.config.retry_delays[
-                            min(attempt, len(self.config.retry_delays) - 1)
-                        ]
-                        logger.warning(
-                            f"Attempt {attempt + 1} failed for {target.value}: {e}. "
-                            f"Retrying in {delay}s..."
-                        )
-                        await asyncio.sleep(delay)
-                    else:
-                        logger.error(
-                            f"All {self.config.max_retry} attempts failed for {target.value}: {e}"
-                        )
+            # Use the new backend system
+            tweets = await self._scrape_target_with_backend(target)
             
-            self.stats["total_requests"] += 1
+            # Store tweets in batch if any were found
+            if tweets:
+                stored_count = self.storage.insert_tweets_batch(tweets)
+                tweets_count = stored_count
+                
+                logger.info(f"Stored {stored_count} tweets for {target.value}")
+                
+                # Update target state on success
+                target.last_scraped = datetime.now(timezone.utc)
+                target.error_count = 0
+            else:
+                # Increment error count if no tweets found
+                target.error_count += 1
+            
             return tweets_count
     
     async def scrape_all_targets(self) -> Dict[str, Any]:
@@ -332,7 +256,8 @@ class AsyncBatchScraper:
             "failed_requests": 0,
             "tweets_scraped": 0,
             "targets_processed": 0,
-            "last_run": start_time
+            "last_run": start_time,
+            "backend_usage": {}
         })
         
         # Create tasks for all targets
@@ -367,7 +292,9 @@ class AsyncBatchScraper:
             "success_rate": (
                 self.stats["successful_requests"] / max(self.stats["total_requests"], 1)
             ),
-            "tweets_per_second": total_tweets / max(duration, 1)
+            "tweets_per_second": total_tweets / max(duration, 1),
+            "backend_usage": self.stats["backend_usage"],
+            "available_backends": self.backend_manager.get_available_backends()
         }
         
         logger.info(
@@ -391,9 +318,12 @@ def load_scraping_config(config_path: str = "config/scraper.yml") -> ScrapingCon
             max_concurrent_requests=data.get("rate_limit", {}).get("max_concurrent_requests", 5),
             retry_delays=data.get("rate_limit", {}).get("retry_delays", [1, 2, 4, 8, 16]),
             batch_size=data.get("scraping", {}).get("batch_size", 50),
-            min_interval_sec=data.get("scraping", {}).get("min_interval_sec", 60),
+            min_interval_sec=data.get("scraping", {}).get("min_interval_sec", 30),
             max_retry=data.get("scraping", {}).get("max_retry", 5),
-            timeout_sec=data.get("scraping", {}).get("timeout_sec", 30)
+            timeout_sec=data.get("scraping", {}).get("timeout_sec", 30),
+            tweets_per_target=data.get("scraping", {}).get("tweets_per_target", 100),
+            preferred_backend=data.get("backend", {}).get("preferred", "snscrape"),
+            enable_backend_fallback=data.get("backend", {}).get("enable_fallback", True)
         )
     except Exception as e:
         logger.warning(f"Failed to load config from {config_path}: {e}. Using defaults.")

@@ -1,6 +1,11 @@
 # Scraper configuration for polymarket-sentiment
 # All values can be overridden via environment variables (prefix: SCRAPER_)
 
+# Backend configuration
+backend:
+  preferred: "snscrape"  # "snscrape", "nitter", or "auto"
+  enable_fallback: true  # Use fallback if primary fails
+
 mirrors:
   - "http://localhost:8080"
   - "https://nitter.net"
@@ -14,9 +19,10 @@ rate_limit:
 
 scraping:
   batch_size: 50  # tweets per request
-  min_interval_sec: 60  # wait between scraping loops
+  min_interval_sec: 30  # wait between scraping loops (reduced for high-frequency)
   max_retry: 5
   timeout_sec: 30
+  tweets_per_target: 100  # tweets per target per run
 
 storage:
   data_dir: "./data"
