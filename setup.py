@@ -46,7 +46,10 @@ setup(
         "uvicorn>=0.20.0",
         "vaderSentiment>=3.3.2",
         "aiohttp>=3.8.0",
-        "asyncio-throttle>=1.0.0"
+        "asyncio-throttle>=1.0.0",
+        "python-dateutil>=2.8.0",
+        "pydantic>=2.0.0",
+        "click>=8.0.0"
     ],
     extras_require={
         "dev": [
