@@ -337,7 +337,14 @@ class TestAsyncBatchScraper:
     async def test_scrape_all_targets(self, scraper):
         """Test scraping all targets concurrently."""
         # Mock successful scraping
-        with patch.object(scraper, '_scrape_target', return_value=5):
+        async def mock_scrape_target(target):
+            # Simulate the stats increments that happen in real method
+            scraper.stats["targets_processed"] += 1
+            scraper.stats["total_requests"] += 1
+            scraper.stats["successful_requests"] += 1
+            return 5
+            
+        with patch.object(scraper, '_scrape_target', side_effect=mock_scrape_target):
             summary = await scraper.scrape_all_targets()
             
             assert summary["targets_total"] == len(scraper.targets)

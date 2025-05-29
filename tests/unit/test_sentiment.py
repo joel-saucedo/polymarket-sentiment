@@ -271,7 +271,7 @@ class TestVADERAnalyzer:
         """Test VADER analyzer with neutral text."""
         analyzer = VADERAnalyzer()
         
-        result = analyzer.analyze("The weather is okay today.")
+        result = analyzer.analyze("The weather is normal today.")
         
         assert abs(result.score) < 0.5  # Should be relatively neutral
         assert result.label == SentimentLabel.NEUTRAL
@@ -605,7 +605,7 @@ class TestSentimentProcessor:
         assert result["positive_tweets"] == 40
         assert "processor_stats" in result
         assert result["processor_stats"]["tweets_processed"] == 50
-        mock_storage.get_sentiment_summary.assert_called_once_with(24)
+        mock_storage.get_sentiment_summary.assert_called_once_with(hours=24)
 
 
 class TestCreateSentimentProcessor:

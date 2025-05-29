@@ -573,8 +573,9 @@ class SentimentProcessor:
     ) -> Dict[str, Any]:
         """Get sentiment summary statistics."""
         try:
-            # Get summary from storage
-            summary = self.storage.get_sentiment_summary(time_window_hours)
+            # Get summary from storage, pass hours parameter correctly
+            hours = time_window_hours if time_window_hours is not None else 24
+            summary = self.storage.get_sentiment_summary(hours=hours)
             
             # Add processor stats
             summary["processor_stats"] = self.stats.copy()

@@ -306,6 +306,25 @@ class TweetStorage:
         except Exception as e:
             logger.error(f"Failed to get sentiment summary: {e}")
             return {}
+
+    def get_tweet_count(self, username: Optional[str] = None, hours: Optional[int] = None) -> int:
+        """Get total count of tweets."""
+        query = "SELECT COUNT(*) FROM tweets WHERE 1=1"
+        params = []
+        
+        if username:
+            query += " AND username = ?"
+            params.append(username)
+            
+        if hours:
+            query += " AND timestamp >= now() - INTERVAL '{hours} hours'".format(hours=hours)
+        
+        try:
+            result = self.connection.execute(query, params).fetchone()
+            return result[0] if result else 0
+        except Exception as e:
+            logger.error(f"Failed to get tweet count: {e}")
+            return 0
     
     def update_sentiment(
         self,
