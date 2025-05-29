@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  nitter:
+    image: zedeus/nitter:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  scraper:
+    build: ./docker/scraper
+    command: "python -m polymkt_sent.cli serve --host 0.0.0.0 --port 8000"
+    environment:
+      - NITTER_URL=http://nitter:8080
+      - DB_PATH=/data/tweets.parquet
+      - PYTHONPATH=/app
+    volumes:
+      - ./data:/data
+      - ./config:/app/config
+    ports:
+      - "8000:8000"
+    depends_on:
+      nitter:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

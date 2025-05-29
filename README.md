@@ -1,22 +1,97 @@
-# Unofficial Nitter scraper
+# Polymarket Sentiment Analysis
 
-## Note
+A real-time sentiment analysis pipeline for generating trading signals on Polymarket, built on top of Nitter scraping.
 
-Twitter has recently made some changes which affected every third party Twitter client, including Nitter. As a result, most Nitter instances have shut down or will shut down shortly. Even local instances are affected by this, so you may not be able to scrape as many tweets as expected, if at all.
+## 30-Second Executive View
 
-## The scraper
+| Goal | Deliverable | Done-When |
+|------|-------------|-----------|
+| 🏗 Spin-up self-contained Nitter + ntscraper stack | `docker-compose up` returns healthy containers and `curl http://scraper:8000/health` → OK | ⏳ |
+| 🔍 Harden & extend ntscraper | forked repo → new branch → added modules → tests pass | ⏳ |
+| 📊 Produce timestamped tweet store + sentiment index | API `data/tweets.parquet` auto-updating & `/sentiment/latest` returns JSON | ⏳ |
+| 🛠 CI/CD & push automation | GH Actions green; `./scripts/ghpush.sh` pushes tagged releases | ✅ |
 
-This is a simple library to scrape Nitter instances for tweets. It can:
+## Features
 
-- search and scrape tweets with a certain term
+This system:
+- **Scrapes tweets** from Nitter instances (bypassing Twitter API limits)
+- **Analyzes sentiment** using VADER and keyword-based scoring  
+- **Stores data** in DuckDB/Parquet for fast querying
+- **Provides REST API** for real-time sentiment signals
+- **Generates trading signals** for Polymarket integration
 
-- search and scrape tweets with a certain hashtag
+## Quick Start
 
-- scrape tweets from a user profile
+1. **Clone and setup:**
+   ```bash
+   git clone https://github.com/joel-saucedo/ntscraper.git polymarket-sentiment
+   cd polymarket-sentiment
+   pip install -e .[dev]
+   ```
 
-- get profile information of a user, such as display name, username, number of tweets, profile picture ...
+2. **Configure targets:**
+   Edit `config/accounts.yml` to specify Twitter accounts and search terms to monitor.
 
-If the instance to use is not provided to the scraper, it will use a random public instance. If you can, please host your own instance in order to avoid overloading the public ones and letting Nitter stay alive for everyone. You can read more about that here: https://github.com/zedeus/nitter#installation.
+3. **Run the stack:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Check health:**
+   ```bash
+   curl http://localhost:8000/health
+   curl http://localhost:8000/sentiment/latest
+   ```
+
+## Configuration
+
+All configuration is in `config/`:
+- `accounts.yml` - Twitter accounts and search terms to monitor
+- `scraper.yml` - Rate limits, batch sizes, intervals
+- `logging.yml` - Log rotation and levels
+
+Environment variables override config files (prefix: `SCRAPER_`).
+
+## Development
+
+This project follows chunk-wise development (max 300 LOC per PR):
+
+| Chunk | Status | Description |
+|-------|--------|-------------|
+| C0 | ✅ | Repo scaffold + configs + CI skeleton |
+| C1 | ⏳ | HTTP patches + retries |
+| C2 | ⏳ | Storage (DuckDB/Parquet) |
+| C3 | ⏳ | Async batch scraper |
+| C4 | ⏳ | Sentiment analysis |
+| C5 | ⏳ | CLI + API endpoints |
+| C6 | ⏳ | Rate-limit scheduler |
+| C7 | ⏳ | Metrics + logging |
+| C8 | ⏳ | Documentation |
+| C9 | ⏳ | Polymarket hooks |
+
+**Push changes:**
+```bash
+./scripts/ghpush.sh "feat: your change description"
+```
+
+## Architecture
+
+```
+Nitter → Scraper → DuckDB/Parquet → Sentiment API → Polymarket
+         (async)   (time-series)     (REST)        (signals)
+```
+
+## Testing
+
+```bash
+# Unit tests
+pytest tests/unit/ -v
+
+# Integration tests (requires Docker)
+docker-compose up -d
+pytest tests/int/ -v
+docker-compose down
+```
 
 ---
 

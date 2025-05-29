@@ -3,6 +3,15 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Project-specific data and logs
+data/
+*.log
+*.parquet
+*.db
+
+# Configuration overrides
+config/local_*.yml
+
 # C extensions
 *.so
 

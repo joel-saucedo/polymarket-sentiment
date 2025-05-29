@@ -1,0 +1,30 @@
+# Scraper configuration for polymarket-sentiment
+# All values can be overridden via environment variables (prefix: SCRAPER_)
+
+mirrors:
+  - "http://localhost:8080"
+  - "https://nitter.net"
+  - "https://nitter.pufe.org"
+  - "https://nitter.hu"
+
+rate_limit:
+  per_mirror_per_minute: 15
+  max_concurrent_requests: 5
+  retry_delays: [1, 2, 4, 8, 16]  # exponential backoff seconds
+
+scraping:
+  batch_size: 50  # tweets per request
+  min_interval_sec: 60  # wait between scraping loops
+  max_retry: 5
+  timeout_sec: 30
+
+storage:
+  data_dir: "./data"
+  parquet_file: "tweets.parquet"
+  backup_enabled: true
+  backup_interval_hours: 24
+
+sentiment:
+  update_interval_sec: 300  # 5 minutes
+  window_minutes: 15  # rolling window for aggregation
+  confidence_threshold: 0.1
