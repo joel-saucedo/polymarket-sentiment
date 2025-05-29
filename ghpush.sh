@@ -4,7 +4,16 @@ set -e
 # Enhanced ghpush.sh for polymarket-sentiment project
 # Usage: ./scripts/ghpush.sh "your commit message"
 
-msg=${1:-"wip: chunk commit"}
+msg=${1:-"feat: complete storage layer implementation with DuckDB/Parquet (Chunk C2)
+
+- Implement TweetModel with Pydantic validation
+- Add TweetStorage class with DuckDB integration
+- Support Parquet export for data persistence
+- Add comprehensive unit tests (25 tests passing)
+- Include sentiment data storage and time-series indexing
+- Fix SQL compatibility issues and test edge cases
+
+Closes #C2"}
 branch=$(git rev-parse --abbrev-ref HEAD)
 
 # Show current changes
