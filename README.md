@@ -6,10 +6,10 @@ A real-time sentiment analysis pipeline for generating trading signals on Polyma
 
 | Goal | Deliverable | Done-When |
 |------|-------------|-----------|
-| 🏗 Spin-up self-contained Nitter + ntscraper stack | `docker-compose up` returns healthy containers and `curl http://scraper:8000/health` → OK | ⏳ |
-| 🔍 Harden & extend ntscraper | forked repo → new branch → added modules → tests pass | ⏳ |
-| 📊 Produce timestamped tweet store + sentiment index | API `data/tweets.parquet` auto-updating & `/sentiment/latest` returns JSON | ⏳ |
-| 🛠 CI/CD & push automation | GH Actions green; `./scripts/ghpush.sh` pushes tagged releases | ✅ |
+| Spin-up self-contained Nitter + ntscraper stack | `docker-compose up` returns healthy containers and `curl http://scraper:8000/health` → OK | [ ] |
+| Harden & extend ntscraper | forked repo → new branch → added modules → tests pass | [ ] |
+| Produce timestamped tweet store + sentiment index | API `data/tweets.parquet` auto-updating & `/sentiment/latest` returns JSON | [ ] |
+| CI/CD & push automation | GH Actions green; `./scripts/ghpush.sh` pushes tagged releases | [x] |
 
 ## Features
 
@@ -58,16 +58,16 @@ This project follows chunk-wise development (max 300 LOC per PR):
 
 | Chunk | Status | Description |
 |-------|--------|-------------|
-| C0 | ✅ | Repo scaffold + configs + CI skeleton |
-| C1 | ⏳ | HTTP patches + retries |
-| C2 | ⏳ | Storage (DuckDB/Parquet) |
-| C3 | ⏳ | Async batch scraper |
-| C4 | ⏳ | Sentiment analysis |
-| C5 | ⏳ | CLI + API endpoints |
-| C6 | ⏳ | Rate-limit scheduler |
-| C7 | ⏳ | Metrics + logging |
-| C8 | ⏳ | Documentation |
-| C9 | ⏳ | Polymarket hooks |
+| C0 | [x] | Repo scaffold + configs + CI skeleton |
+| C1 | [ ] | HTTP patches + retries |
+| C2 | [ ] | Storage (DuckDB/Parquet) |
+| C3 | [ ] | Async batch scraper |
+| C4 | [ ] | Sentiment analysis |
+| C5 | [ ] | CLI + API endpoints |
+| C6 | [ ] | Rate-limit scheduler |
+| C7 | [ ] | Metrics + logging |
+| C8 | [ ] | Documentation |
+| C9 | [ ] | Polymarket hooks |
 
 **Push changes:**
 ```bash
