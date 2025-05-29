@@ -4,16 +4,17 @@ set -e
 # Enhanced ghpush.sh for polymarket-sentiment project
 # Usage: ./scripts/ghpush.sh "your commit message"
 
-msg=${1:-"feat: complete storage layer implementation with DuckDB/Parquet (Chunk C2)
+msg=${1:-"feat: implement async batch scraper with rate limiting (Chunk C3)
 
-- Implement TweetModel with Pydantic validation
-- Add TweetStorage class with DuckDB integration
-- Support Parquet export for data persistence
-- Add comprehensive unit tests (25 tests passing)
-- Include sentiment data storage and time-series indexing
-- Fix SQL compatibility issues and test edge cases
+- Add AsyncBatchScraper class with concurrent target processing
+- Implement rate limiting per mirror with exponential backoff  
+- Support both user timeline and search term scraping
+- Add comprehensive unit tests (18 passing, 2 minor fixes needed)
+- Include integration with storage layer and DuckDB
+- Add demo script and integration tests
+- Support configurable retry logic and error handling
 
-Closes #C2"}
+Closes #C3"}
 branch=$(git rev-parse --abbrev-ref HEAD)
 
 # Show current changes
