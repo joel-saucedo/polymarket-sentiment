@@ -24,7 +24,7 @@ This system:
 
 1. **Clone and setup:**
    ```bash
-   git clone https://github.com/joel-saucedo/ntscraper.git polymarket-sentiment
+   git clone https://github.com/joel-saucedo/polymarket-sentiment.git
    cd polymarket-sentiment
    pip install -e .[dev]
    ```
